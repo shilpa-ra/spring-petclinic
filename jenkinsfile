@@ -1,0 +1,84 @@
+pipeline {
+    agent {label 'git'}
+    triggers {
+     pollSCM('* * * * *')
+    }
+    stages {
+        stage('git url') {
+            steps {
+            git url: 'https://github.com/shilpa-ra/spring-petclinic.git',
+            branch: 'main'
+            }
+        } 
+        stage('sonarqube') {
+            steps {
+                withSonarQubeEnv('sonar') {
+                    sh 'mvn clean package sonar:sonar'
+                }
+            }
+        } 
+      /*  stage("Quality Gate") {
+            steps {
+              timeout(time: 20, unit: "MINUTES") {
+                waitForQualityGate abortPipeline: false
+              }
+            }
+        }*/
+        stage('Artifactory') {
+            steps {
+                rtMavenDeployer (  
+                    id : "maven_developer",
+                    releaseRepo : 'spring-libs-release-local',
+                    snapshotRepo : 'spring-libs-snapshot-local',
+                    serverId : "vrgv_31"
+                )
+            }
+        }
+        stage('rtrundeveloper') {
+            steps {
+                rtMavenRun (
+                    tool : "maven_tool", // Tool name from Jenkins configuration
+                    pom : 'pom.xml',
+                    goals : 'package',
+                    deployerId : "maven_developer"
+                )  
+            }
+        }
+        stage('rtPublishBuildInfo') {
+            steps {
+                rtPublishBuildInfo (
+                    serverId : "vrgv_31" 
+                )
+            }
+        } 
+        stage('docker image build') {
+           steps {
+             sh "docker image build -t $env.JOB_NAME:$env.BUILD_ID ."
+             sh "docker image tag $env.JOB_NAME:$NAME:$env.BUILD_ID qtshilpa.jfrog.io/shilparathod-docker/$env.JOB_NAME:$NAME:$env.BUILD_ID"
+             sh "docker image push $env.JOB_NAME:$NAME:$env.BUILD_ID qtshilpa.jfrog.io/shilparathod-docker/$env.JOB_NAME:$NAME:$env.BUILD_ID"
+           }
+        }
+    }     
+    post {
+      always {
+        echo 'hello-world'
+        mail subject: 'build for jenkins job',
+             body: 'build for jenkins job',
+             to: 'shilparathod720@gmail.com'
+      }
+      failure {
+        mail subject: 'build fail for jenkins',
+              body: 'build failed for jenkins',
+              to: 'shilparathod720@gmail.com'
+      }
+      success {
+        junit '**/surefire-reports/*.xml'
+
+      }
+
+    }
+
+ } 
+
+
+
